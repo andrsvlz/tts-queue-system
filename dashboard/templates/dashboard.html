@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Queue System Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
+        .header { background: #2c3e50; color: white; padding: 1rem; text-align: center; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: white; border-radius: 8px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-card h3 { color: #2c3e50; margin-bottom: 1rem; }
+        .stat-number { font-size: 2rem; font-weight: bold; color: #3498db; }
+        .stat-label { color: #7f8c8d; font-size: 0.9rem; }
+        .queue-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #ecf0f1; }
+        .worker-item { background: #ecf0f1; margin: 0.5rem 0; padding: 0.5rem; border-radius: 4px; }
+        .status-idle { color: #27ae60; }
+        .status-processing { color: #e74c3c; }
+        .status-completed { color: #27ae60; }
+        .status-failed { color: #e74c3c; }
+        .status-queued { color: #f39c12; }
+        .refresh-btn { background: #3498db; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+        .refresh-btn:hover { background: #2980b9; }
+        .timestamp { color: #7f8c8d; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎙️ TTS Queue System Dashboard</h1>
+        <p>Sistema de Colas para Llamadas TTS con RabbitMQ</p>
+    </div>
+
+    <div class="container">
+        <div style="text-align: center; margin-bottom: 1rem;">
+            <button class="refresh-btn" onclick="refreshStats()">🔄 Actualizar</button>
+            <span class="timestamp" id="lastUpdate"></span>
+        </div>
+
+        <div class="stats-grid">
+            <!-- Estadísticas de Colas -->
+            <div class="stat-card">
+                <h3>📋 Colas RabbitMQ</h3>
+                <div id="queues-stats">
+                    <div class="queue-item">
+                        <span>Normal Calls:</span>
+                        <span class="stat-number" id="queue-normal">-</span>
+                    </div>
+                    <div class="queue-item">
+                        <span>Priority Calls:</span>
+                        <span class="stat-number" id="queue-priority">-</span>
+                    </div>
+                    <div class="queue-item">
+                        <span>Results:</span>
+                        <span class="stat-number" id="queue-results">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estadísticas de Workers -->
+            <div class="stat-card">
+                <h3>👷 Workers</h3>
+                <div class="queue-item">
+                    <span>Total Workers:</span>
+                    <span class="stat-number" id="workers-total">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Activos:</span>
+                    <span class="stat-number status-processing" id="workers-active">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Inactivos:</span>
+                    <span class="stat-number status-idle" id="workers-idle">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Total Procesados:</span>
+                    <span class="stat-number" id="workers-processed">-</span>
+                </div>
+            </div>
+
+            <!-- Estadísticas de Trabajos -->
+            <div class="stat-card">
+                <h3>📊 Trabajos</h3>
+                <div class="queue-item">
+                    <span>Total:</span>
+                    <span class="stat-number" id="jobs-total">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>En Cola:</span>
+                    <span class="stat-number status-queued" id="jobs-queued">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Procesando:</span>
+                    <span class="stat-number status-processing" id="jobs-processing">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Completados:</span>
+                    <span class="stat-number status-completed" id="jobs-completed">-</span>
+                </div>
+                <div class="queue-item">
+                    <span>Fallidos:</span>
+                    <span class="stat-number status-failed" id="jobs-failed">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detalles de Workers -->
+        <div class="stat-card">
+            <h3>👷 Detalles de Workers</h3>
+            <div id="workers-details">
+                <p>Cargando...</p>
+            </div>
+        </div>
+
+        <!-- Trabajos Recientes -->
+        <div class="stat-card">
+            <h3>📋 Trabajos Recientes</h3>
+            <div id="recent-jobs">
+                <p>Cargando...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function refreshStats() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateDashboard(data.stats);
+                        document.getElementById('lastUpdate').textContent = 
+                            'Última actualización: ' + new Date().toLocaleTimeString();
+                    } else {
+                        console.error('Error:', data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching stats:', error);
+                });
+        }
+
+        function updateDashboard(stats) {
+            // Actualizar colas
+            if (stats.queues) {
+                document.getElementById('queue-normal').textContent = stats.queues.normal.count;
+                document.getElementById('queue-priority').textContent = stats.queues.priority.count;
+                document.getElementById('queue-results').textContent = stats.queues.results.count;
+            }
+
+            // Actualizar workers
+            if (stats.workers) {
+                document.getElementById('workers-total').textContent = stats.workers.total;
+                document.getElementById('workers-active').textContent = stats.workers.active;
+                document.getElementById('workers-idle').textContent = stats.workers.idle;
+                document.getElementById('workers-processed').textContent = stats.workers.total_processed;
+
+                // Detalles de workers
+                const workersHtml = stats.workers.details.map(worker => `
+                    <div class="worker-item">
+                        <strong>${worker.worker_id}</strong> - 
+                        <span class="status-${worker.status}">${worker.status}</span> - 
+                        Procesados: ${worker.processed_jobs || 0} - 
+                        Último heartbeat: ${new Date(worker.last_heartbeat).toLocaleTimeString()}
+                    </div>
+                `).join('');
+                document.getElementById('workers-details').innerHTML = workersHtml || '<p>No hay workers activos</p>';
+            }
+
+            // Actualizar trabajos
+            if (stats.jobs) {
+                document.getElementById('jobs-total').textContent = stats.jobs.total;
+                document.getElementById('jobs-queued').textContent = stats.jobs.by_status.queued;
+                document.getElementById('jobs-processing').textContent = stats.jobs.by_status.processing;
+                document.getElementById('jobs-completed').textContent = stats.jobs.by_status.completed;
+                document.getElementById('jobs-failed').textContent = stats.jobs.by_status.failed;
+
+                // Trabajos recientes
+                const jobsHtml = stats.jobs.recent.map(job => `
+                    <div class="queue-item">
+                        <div>
+                            <strong>${job.job_id.substring(0, 8)}...</strong><br>
+                            <small>${job.text.substring(0, 50)}...</small><br>
+                            <small>📞 ${job.phone_number}</small>
+                        </div>
+                        <div style="text-align: right;">
+                            <span class="status-${job.status}">${job.status}</span><br>
+                            <small>${new Date(job.created_at).toLocaleTimeString()}</small>
+                        </div>
+                    </div>
+                `).join('');
+                document.getElementById('recent-jobs').innerHTML = jobsHtml || '<p>No hay trabajos recientes</p>';
+            }
+        }
+
+        // Actualizar cada 5 segundos
+        setInterval(refreshStats, 5000);
+        
+        // Cargar datos iniciales
+        refreshStats();
+    </script>
+</body>
+</html>

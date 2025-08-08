@@ -1,0 +1,27 @@
+# Dockerfile para Workers TTS
+FROM python:3.10-slim
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Copiar requirements
+COPY requirements.txt .
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código del worker
+COPY workers/ ./workers/
+COPY config/ ./config/
+
+# Crear directorio de logs
+RUN mkdir -p logs
+
+# Comando por defecto
+CMD ["python", "workers/tts_worker.py"]
